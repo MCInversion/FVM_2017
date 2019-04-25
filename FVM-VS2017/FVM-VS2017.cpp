@@ -7,9 +7,10 @@
 
 #define _USE_MATH_DEFINES
 #include <math.h>
+#include <mpi.h>
 
 
-#define RAD M_PI/180
+#define RAD M_PI / 180
 
 #define n1 60        	/*number of divisions in R direction*/
 #define n2 40        	/*number of divisions in B direction*/
@@ -31,8 +32,15 @@
 #define tol 1.0e-20     /*toleration*/
 #define max_it 10000	 /*number of itterations*/
 
-int main()
+int main(int argc, char **argv)
 {
+	// MPI Vars:
+	int nprocs, myrank;
+	
+	MPI_Init(&argc, &argv);
+	MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+	MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+
 	long i, j, k, it;
 	double deltaR, deltaL, deltaB, deltaL1, deltaB1, res, pom, pom1, z, sigma, res3;
 	typedef double pole1[n1 + 2][n2 + 2][n3 + 2];
@@ -40,20 +48,35 @@ int main()
 	static pole1 B, L, R;
 	static pole2 T_B, T_L, T_R, s, u, deltag;
 	static pole2 an, as, aw, ae, au, ad, ap, b, res2;
-
 	FILE *fr, *fw;
 
-	fopen_s(&fw, "stat.txt", "w");
+	if (myrank == 0) {
+		fopen_s(&fw, "stat.txt", "w");
 
-	deltaL = (Lu - Ld) / n3;
-	deltaB = (Bu - Bd) / n2;
-	deltaR = (Ru - Rd) / n1;
-	deltaL1 = deltaL * RAD*Rd;
-	deltaB1 = deltaB * RAD*Rd;
-	printf("%.2lf %.2lf %.2lf\n", deltaL1, deltaB1, deltaR);
+		deltaL = (Lu - Ld) / n3;
+		deltaB = (Bu - Bd) / n2;
+		deltaR = (Ru - Rd) / n1;
+		deltaL1 = deltaL * RAD * Rd;
+		deltaB1 = deltaB * RAD * Rd;
+		printf("%.2lf %.2lf %.2lf\n", deltaL1, deltaB1, deltaR);
+	}
+
+	// local/last packet sizes
+	int istart, iend, nlocal = 0, nlast = 0;
+	nlocal = (n1 / nprocs) + 1;
+	nlast = n1 - (nprocs - 1) * nlocal;
+
+	// packet indexing
+	istart = nlocal * myrank;
+	if (myrank == nprocs - 1)
+		iend = n1 - 1;
+	else
+		iend = istart + nlocal - 1;
 
 	/*----------------------------------------------------------------------------*/
 	/*vytvorenie 3D siete*/
+
+	double *Llocal; double *Blocal; double *Rlocal;
 
 	for (i = 1; i <= n1 + 1; i++)
 		for (j = 1; j <= n2 + 1; j++)
@@ -152,19 +175,19 @@ int main()
 
 				//Obsah W a E steny = deltaB/2*(Rspodne^2-Rvrchne^2), ... Obsah W a E steny sa meni len s R. RAD preraba stupne na radiany.
 				// vzdialenosti medzi bodmi v smere W a E = deltaL*R*cos(B), ... vzdialenosti sa menia s R a B lebo cim sme blizsie k polom tak sa vzdianenosti zmensuju (lebo su kratsie rovnobezky)
-				aw[i][j][k] = (deltaB / 2.*RAD*(R[i + 1][j][k] * R[i + 1][j][k] - R[i][j][k] * R[i][j][k])) / (deltaL*RAD*T_R[i][j][k] * cos(T_B[i][j][k] * RAD));
+				aw[i][j][k] = (deltaB / 2. * RAD * (R[i + 1][j][k] * R[i + 1][j][k] - R[i][j][k] * R[i][j][k])) / (deltaL * RAD * T_R[i][j][k] * cos(T_B[i][j][k] * RAD));
 				ae[i][j][k] = aw[i][j][k];
 
 				//Obsah N a S steny = deltaL/2*(Rspodne^2-Rvrchne^2)*cos(B), ... Obsah N a S steny sa meni s R ale aj s B lebo cim sme blizsie k polom tak sa obsahy stien zmensuju (lebo su kratsie rovnobezky)
 				// vzdialenosti medzi bodmi v smere N a S = deltaB*R, ... vzdialenosti sa menia s R lebo poludniky su vzdy rovnako dlhe
-				an[i][j][k] = (deltaL / 2.*RAD*(R[i + 1][j][k] * R[i + 1][j][k] - R[i][j][k] * R[i][j][k])*cos(B[i][j + 1][k] * RAD)) / (deltaB*RAD*T_R[i][j][k]);
-				as[i][j][k] = (deltaL / 2.*RAD*(R[i + 1][j][k] * R[i + 1][j][k] - R[i][j][k] * R[i][j][k])*cos(B[i][j][k] * RAD)) / (deltaB*RAD*T_R[i][j][k]);
+				an[i][j][k] = (deltaL / 2. * RAD * (R[i + 1][j][k] * R[i + 1][j][k] - R[i][j][k] * R[i][j][k])*cos(B[i][j + 1][k] * RAD)) / (deltaB*RAD*T_R[i][j][k]);
+				as[i][j][k] = (deltaL / 2. * RAD * (R[i + 1][j][k] * R[i + 1][j][k] - R[i][j][k] * R[i][j][k])*cos(B[i][j][k] * RAD)) / (deltaB * RAD * T_R[i][j][k]);
 
 				//Obsah D steny = deltaL * (sin(Be) - sin(Bw)) * Rspodne^2
 				//Obsah U steny = deltaL * (sin(Be) - sin(Bw)) * Rvrchne^2
 				//vzdialenost medzi bodmi v smere U a D = deltaR
-				ad[i][j][k] = deltaL * RAD*(sin(B[i + 1][j + 1][k] * RAD) - sin(B[i + 1][j][k] * RAD))*R[i][j][k] * R[i][j][k] / deltaR;
-				au[i][j][k] = deltaL * RAD*(sin(B[i][j + 1][k] * RAD) - sin(B[i][j][k] * RAD))*R[i + 1][j][k] * R[i + 1][j][k] / deltaR;
+				ad[i][j][k] = deltaL * RAD * (sin(B[i + 1][j + 1][k] * RAD) - sin(B[i + 1][j][k] * RAD)) * R[i][j][k] * R[i][j][k] / deltaR;
+				au[i][j][k] = deltaL * RAD * (sin(B[i][j + 1][k] * RAD) - sin(B[i][j][k] * RAD)) * R[i + 1][j][k] * R[i + 1][j][k] / deltaR;
 
 				//vsetky aw, ae, an, as, ad, au by mali byt s minuskou ale v SOR sa to potom kompenzuje.
 				ap[i][j][k] = -(aw[i][j][k] + ae[i][j][k] + as[i][j][k] + an[i][j][k] + au[i][j][k] + ad[i][j][k]);
@@ -182,7 +205,7 @@ int main()
 			//deltag je derivacia v radialnom smere (t.j. v smere normaly k D stene)
 			deltag[1][j][k] = GM / (R[1][j][k] * R[1][j][k]);
 			//kedze derivaciu v smere normaly k dolnej stene pozname, mozme ju prenasobit obsahom D steny a prehodit na pravu stranu
-			b[1][j][k] = b[1][j][k] - deltaL * RAD*(sin(B[1][j + 1][k] * RAD) - sin(B[1][j][k] * RAD))*R[1][j][k] * R[1][j][k] * deltag[1][j][k];
+			b[1][j][k] = b[1][j][k] - deltaL * RAD * (sin(B[1][j + 1][k] * RAD) - sin(B[1][j][k] * RAD)) * R[1][j][k] * R[1][j][k] * deltag[1][j][k];
 			//kedze sme ju prehodili na pravu stranu, treba ju nulovat medzi neznamymi
 			ad[1][j][k] = 0;
 			ap[1][j][k] = -(aw[1][j][k] + ae[1][j][k] + as[1][j][k] + an[1][j][k] + au[1][j][k]);
@@ -351,6 +374,8 @@ int main()
 		}
 
 	fclose(fw);
+
+	MPI_Finalize();
 
 	return 0;
 }
