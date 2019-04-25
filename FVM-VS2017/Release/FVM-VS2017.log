@@ -1,0 +1,6 @@
+﻿  FVM-VS2017.cpp
+c:\users\student\downloads\kludnemazmaz\fvm-vs2017\fvm-vs2017\fvm-vs2017.cpp(44): warning C4101: 'fr': unreferenced local variable
+  Generating code
+  All 5 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Finished generating code
+  FVM-VS2017.vcxproj -> C:\Users\student\Downloads\KludneMaZmaz\FVM-VS2017\Release\FVM-VS2017.exe
