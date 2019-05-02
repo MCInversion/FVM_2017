@@ -1,6 +1,12 @@
-﻿  FVM-VS2017.cpp
-c:\users\student\downloads\kludnemazmaz\fvm-vs2017\fvm-vs2017\fvm-vs2017.cpp(44): warning C4101: 'fr': unreferenced local variable
+﻿  pch.cpp
+  FVM-VS2017.cpp
+c:\users\student\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(79): warning C4101: 'Rlocal': unreferenced local variable
+c:\users\student\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(79): warning C4101: 'Blocal': unreferenced local variable
+c:\users\student\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(79): warning C4101: 'Llocal': unreferenced local variable
+c:\users\student\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(51): warning C4101: 'fr': unreferenced local variable
   Generating code
-  All 5 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
-  Finished generating code
-  FVM-VS2017.vcxproj -> C:\Users\student\Downloads\KludneMaZmaz\FVM-VS2017\Release\FVM-VS2017.exe
+c:\users\student\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(357): error C4703: potentially uninitialized local pointer variable 'fw' used
+  4 of 5 functions (80.0%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    0 functions had inline decision re-evaluated but remain unchanged
+LINK : fatal error LNK1257: code generation failed
