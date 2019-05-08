@@ -43,23 +43,42 @@ int main(int argc, char **argv) {
 	long i, j, k, it;
 	const int NPROC = 4;
 	double deltaR, deltaL, deltaB, deltaL1, deltaB1, res, pom, pom1, z, sigma, res3;
-	typedef double pole1 [n1 / NPROC + 3][n2 + 2][n3 + 2];
-	typedef double pole2 [n1 / NPROC + 3][n2 + 2][n3 + 2];
-	static pole1 B, L, R;
-	static pole2 T_B, T_L, T_R, s, u, deltag;
-	static pole2 an, as, aw, ae, au, ad, ap, b, res2;
-	FILE *fr, *fw;
 
-	if (myrank == 0) {
-		fopen_s(&fw, "stat.txt", "w");
+	// typedef double pole1 [n1 / NPROC + 3][n2 + 2][n3 + 2];
+	// typedef double pole2 [n1 / NPROC + 3][n2 + 2][n3 + 2];
+	// static pole1 B, L, R;
+	// static pole2 T_B, T_L, T_R, s, u, deltag;
+	// static pole2 an, as, aw, ae, au, ad, ap, b, res2;
 
-		deltaL = (Lu - Ld) / n3;
-		deltaB = (Bu - Bd) / n2;
-		deltaR = (Ru - Rd) / n1;
-		deltaL1 = deltaL * RAD * Rd;
-		deltaB1 = deltaB * RAD * Rd;
-		printf("%.2lf %.2lf %.2lf\n", deltaL1, deltaB1, deltaR);
-	}
+	double ***B = new double **[n1 / NPROC + 3];
+	double ***L = new double **[n1 / NPROC + 3];
+	double ***R = new double **[n1 / NPROC + 3];
+
+	double ***T_B = new double **[n1 / NPROC + 3];
+	double ***T_L = new double **[n1 / NPROC + 3];
+	double ***T_R = new double **[n1 / NPROC + 3];
+
+	double ***s = new double **[n1 / NPROC + 3];
+	double ***u = new double **[n1 / NPROC + 3];
+	double ***deltag = new double **[n1 / NPROC + 3];
+
+	double ***an = new double **[n1 / NPROC + 3];
+	double ***as = new double **[n1 / NPROC + 3];
+	double ***aw = new double **[n1 / NPROC + 3];
+	double ***ae = new double **[n1 / NPROC + 3];
+	double ***au = new double **[n1 / NPROC + 3];
+	double ***ad = new double **[n1 / NPROC + 3];
+	double ***ap = new double **[n1 / NPROC + 3];
+
+	double ***b = new double **[n1 / NPROC + 3];
+	double ***res2 = new double **[n1 / NPROC + 3];
+
+	deltaL = (Lu - Ld) / n3;
+	deltaB = (Bu - Bd) / n2;
+	deltaR = (Ru - Rd) / n1;
+	deltaL1 = deltaL * RAD * Rd;
+	deltaB1 = deltaB * RAD * Rd;
+	printf("%.2lf %.2lf %.2lf\n\n", deltaL1, deltaB1, deltaR);
 
 	// local/last packet sizes
 	int istart, iend, nlocal = 0, nlast = 0;
@@ -74,32 +93,62 @@ int main(int argc, char **argv) {
 	else
 		iend = istart + nlocal - 1;
 
+	if (myrank == 0) {
+		printf("===============================================\n");
+		printf("--------- MPI params --------------------------\n");
+		printf("nprocs = %d \n", nprocs);
+		printf("p%d: nlocal = %d, nlast = %d\n", myrank, nlocal, nlast);
+	}
+	printf("p%d: istart = %d, iend = %d\n\n", myrank, istart, iend);
+
 	/*----------------------------------------------------------------------------*/
 	/*vytvorenie 3D siete*/
 
 	for (i = 1; i <= nlocal; i++) {
-		iGlobal = istart + i;
+		L[i] = new double *[n2 + 2];
+		B[i] = new double *[n2 + 2];
+		R[i] = new double *[n2 + 2];
 		for (j = 1; j <= n2 + 1; j++) {
+			L[i][j] = new double[n3 + 2];
+			B[i][j] = new double[n3 + 2];
+			R[i][j] = new double[n3 + 2];
 			for (k = 1; k <= n3 + 1; k++) {
 				L[i][j][k] = Ld + (k - 1) * deltaL;
 				B[i][j][k] = Bd + (j - 1) * deltaB;
-				R[i][j][k] = Rd + (iGlobal - 1) * deltaR;
+				R[i][j][k] = Rd + (istart + i - 1) * deltaR;
 			}
 		}
 	}
+
+	// process layer boundaries (upper and lower)
+	double **L_bdL = L[0];
+	double **L_bdU = L[nlocal];
+
+	double **B_bdL = B[0];
+	double **B_bdU = B[nlocal];
+
+	double **R_bdL = R[0];
+	double **R_bdU = R[nlocal];
 
 	/*----------------------------------------------------------------------------*/
 	/*vypocet tazisk v BLR*/
 
 	for (i = 1; i <= nlocal; i++) {
+		T_L[i] = new double *[n2 + 2];
+		T_B[i] = new double *[n2 + 2];
+		T_R[i] = new double *[n2 + 2];
 		for (j = 1; j <= n2; j++) {
+			T_L[i][j] = new double[n3 + 2];
+			T_B[i][j] = new double[n3 + 2];
+			T_R[i][j] = new double[n3 + 2];
 			for (k = 1; k <= n3; k++) {
 				T_L[i][j][k] = 0.5 * (L[i][j][k] + L[i][j][k + 1]);
 				T_B[i][j][k] = 0.5 * (B[i][j][k] + B[i][j + 1][k]);
-				T_R[i][j][k] = R[i][j][k] + 0.5*deltaR;
+				T_R[i][j][k] = R[i][j][k] + 0.5 * deltaR;
 			}
 		}
 	}
+
 	/*----------------------------------------------------------------------------*/
 	/*pridanie okrajovych tazisk*/
 
@@ -129,7 +178,13 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	T_L[0] = new double *[n2 + 2];
+	T_B[0] = new double *[n2 + 2];
+	T_R[0] = new double *[n2 + 2];
 	for (j = 1; j <= n2; j++) {
+		T_L[0][j] = new double[n3 + 2];
+		T_B[0][j] = new double[n3 + 2];
+		T_R[0][j] = new double[n3 + 2];
 		for (k = 1; k <= n3; k++) {
 			T_B[0][j][k] = T_B[1][j][k];
 			T_B[n1 + 1][j][k] = T_B[n1][j][k];
@@ -142,11 +197,33 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	// process layer boundaries (upper and lower)
+	double **TL_bdU = T_L[nlocal];
+	double **TL_bdL = T_L[0];
+
+	double **TB_bdU = T_B[nlocal];
+	double **TB_bdL = T_B[0];
+
+	double **TR_bdU = T_R[nlocal];
+	double **TR_bdL = T_R[0];
+
 	/*----------------------------------------------------------------------------*/
 	/*vynulovanie poli*/
 
 	for (i = 0; i <= nlocal + 1; i++) {
+		aw[i] = new double *[n2 + 2]; ae[i] = new double *[n2 + 2];
+		an[i] = new double *[n2 + 2]; as[i] = new double *[n2 + 2];
+		au[i] = new double *[n2 + 2]; ad[i] = new double *[n2 + 2];
+
+		ap[i] = new double *[n2 + 2]; u[i] = new double *[n2 + 2];
+		b[i] = new double *[n2 + 2]; s[i] = new double *[n2 + 2]; res2[i] = new double *[n2 + 2];
 		for (j = 0; j <= n2 + 1; j++) {
+			aw[i][j] = new double[n3 + 2]; ae[i][j] = new double[n3 + 2];
+			an[i][j] = new double[n3 + 2]; as[i][j] = new double[n3 + 2];
+			au[i][j] = new double[n3 + 2]; ad[i][j] = new double[n3 + 2];
+
+			ap[i][j] = new double [n3 + 2]; u[i][j] = new double [n3 + 2];
+			b[i][j] = new double [n3 + 2]; s[i][j] = new double [n3 + 2]; res2[i][j] = new double [n3 + 2];
 			for (k = 0; k <= n3 + 1; k++) {
 				u[i][j][k] = 0.0;
 				aw[i][j][k] = 0.0;
@@ -161,6 +238,62 @@ int main(int argc, char **argv) {
 				res2[i][j][k] = 0.0;
 			}
 		}
+	}
+
+	// send boundary layers to neighboring processes
+	if (myrank > 0) {
+		MPI_Send(L_bdL, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 0, MPI_COMM_WORLD);
+		MPI_Send(B_bdL, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 1, MPI_COMM_WORLD);
+		MPI_Send(R_bdL, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 2, MPI_COMM_WORLD);
+
+		MPI_Send(TL_bdL, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 3, MPI_COMM_WORLD);
+		MPI_Send(TB_bdL, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 4, MPI_COMM_WORLD);
+		MPI_Send(TR_bdL, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 5, MPI_COMM_WORLD);
+	}
+	if (myrank < nprocs - 1) {
+		MPI_Send(L_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 6, MPI_COMM_WORLD);
+		MPI_Send(B_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 7, MPI_COMM_WORLD);
+		MPI_Send(R_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 8, MPI_COMM_WORLD);
+
+		MPI_Send(TL_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 9, MPI_COMM_WORLD);
+		MPI_Send(TB_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 10, MPI_COMM_WORLD);
+		MPI_Send(TR_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 11, MPI_COMM_WORLD);
+	}
+
+	// recv buffers
+	double **recv_L_bdL;
+	double **recv_L_bdU;
+	double **recv_B_bdL;
+	double **recv_B_bdU;
+	double **recv_R_bdL;
+	double **recv_R_bdU;
+
+	double **recv_TL_bdU;
+	double **recv_TL_bdL;
+	double **recv_TB_bdU;
+	double **recv_TB_bdL;
+	double **recv_TR_bdU;
+	double **recv_TR_bdL;
+
+	MPI_Status status;
+
+	if (myrank < nprocs - 1) {
+		MPI_Recv(recv_L_bdL, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 0, MPI_COMM_WORLD, &status);
+		MPI_Recv(recv_B_bdL, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 1, MPI_COMM_WORLD, &status);
+		MPI_Recv(recv_R_bdL, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 2, MPI_COMM_WORLD, &status);
+
+		MPI_Recv(recv_TL_bdL, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 3, MPI_COMM_WORLD, &status);
+		MPI_Recv(recv_TB_bdL, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 4, MPI_COMM_WORLD, &status);
+		MPI_Recv(recv_TR_bdL, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 5, MPI_COMM_WORLD, &status);
+	}
+	if (myrank > 0) {
+		MPI_Recv(recv_L_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 6, MPI_COMM_WORLD, &status);
+		MPI_Recv(recv_B_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 7, MPI_COMM_WORLD, &status);
+		MPI_Recv(recv_R_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 8, MPI_COMM_WORLD, &status);
+
+		MPI_Recv(recv_TL_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 9, MPI_COMM_WORLD, &status);
+		MPI_Recv(recv_TB_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 10, MPI_COMM_WORLD, &status);
+		MPI_Recv(recv_TR_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 11, MPI_COMM_WORLD, &status);
 	}
 
 	/*----------------------------------------------------------------------------*/
@@ -182,8 +315,8 @@ int main(int argc, char **argv) {
 
 				//Obsah N a S steny = deltaL/2*(Rspodne^2-Rvrchne^2)*cos(B), ... Obsah N a S steny sa meni s R ale aj s B lebo cim sme blizsie k polom tak sa obsahy stien zmensuju (lebo su kratsie rovnobezky)
 				// vzdialenosti medzi bodmi v smere N a S = deltaB*R, ... vzdialenosti sa menia s R lebo poludniky su vzdy rovnako dlhe
-				an[i][j][k] = (deltaL / 2. * RAD * (R[i + 1][j][k] * R[i + 1][j][k] - R[i][j][k] * R[i][j][k])*cos(B[i][j + 1][k] * RAD)) / (deltaB*RAD*T_R[i][j][k]);
-				as[i][j][k] = (deltaL / 2. * RAD * (R[i + 1][j][k] * R[i + 1][j][k] - R[i][j][k] * R[i][j][k])*cos(B[i][j][k] * RAD)) / (deltaB * RAD * T_R[i][j][k]);
+				an[i][j][k] = (deltaL / 2. * RAD * (R[i + 1][j][k] * R[i + 1][j][k] - R[i][j][k] * R[i][j][k]) * cos(B[i][j + 1][k] * RAD)) / (deltaB * RAD * T_R[i][j][k]);
+				as[i][j][k] = (deltaL / 2. * RAD * (R[i + 1][j][k] * R[i + 1][j][k] - R[i][j][k] * R[i][j][k]) * cos(B[i][j][k] * RAD)) / (deltaB * RAD * T_R[i][j][k]);
 
 				//Obsah D steny = deltaL * (sin(Be) - sin(Bw)) * Rspodne^2
 				//Obsah U steny = deltaL * (sin(Be) - sin(Bw)) * Rvrchne^2
@@ -353,33 +486,40 @@ int main(int argc, char **argv) {
 	sigma = sqrt(pom);
 	printf("sigma = %.20lf\n", sigma);
 
-	i = 1;
-	for (j = 1; j <= n2; j++) {
-		for (k = 1; k <= n3; k++) {
-			res2[i][j][1] = (GM / T_R[i][j][k]) - u[i][j][k];
-			fprintf(fw, "%d %d %d\t%.7lf\t%.9lf\t%.7lf\n", i, j, k, u[i][j][j], res2[i][j][j], (GM / T_R[i][j][k]));
-		}
-	}
+	if (myrank == 0) {
+		FILE *fw; // *fr,
+		fopen_s(&fw, "stat.txt", "w");
 
-	i = n1 / 2;
-	for (j = 1; j <= n2; j++) {
-		for (k = 1; k <= n3; k++) {
-			res2[i][j][1] = (GM / T_R[i][j][k]) - u[i][j][k];
-			fprintf(fw, "%d %d %d\t%.7lf\t%.9lf\t%.7lf\n", i, j, k, u[i][j][j], res2[i][j][j], (GM / T_R[i][j][k]));
+		i = 1;
+		for (j = 1; j <= n2; j++) {
+			for (k = 1; k <= n3; k++) {
+				res2[i][j][1] = (GM / T_R[i][j][k]) - u[i][j][k];
+				fprintf(fw, "%d %d %d\t%.7lf\t%.9lf\t%.7lf\n", i, j, k, u[i][j][j], res2[i][j][j], (GM / T_R[i][j][k]));
+			}
 		}
-	}
 
-	i = n1;
-	for (j = 1; j <= n2; j++) {
-		for (k = 1; k <= n3; k++) {
-			res2[i][j][1] = (GM / T_R[i][j][k]) - u[i][j][k];
-			fprintf(fw, "%d %d %d\t%.7lf\t%.9lf\t%.7lf\n", i, j, k, u[i][j][j], res2[i][j][j], (GM / T_R[i][j][k]));
+		i = n1 / 2;
+		for (j = 1; j <= n2; j++) {
+			for (k = 1; k <= n3; k++) {
+				res2[i][j][1] = (GM / T_R[i][j][k]) - u[i][j][k];
+				fprintf(fw, "%d %d %d\t%.7lf\t%.9lf\t%.7lf\n", i, j, k, u[i][j][j], res2[i][j][j], (GM / T_R[i][j][k]));
+			}
 		}
-	}
 
-	fclose(fw);
+		i = n1;
+		for (j = 1; j <= n2; j++) {
+			for (k = 1; k <= n3; k++) {
+				res2[i][j][1] = (GM / T_R[i][j][k]) - u[i][j][k];
+				fprintf(fw, "%d %d %d\t%.7lf\t%.9lf\t%.7lf\n", i, j, k, u[i][j][j], res2[i][j][j], (GM / T_R[i][j][k]));
+			}
+		}
+
+		fclose(fw);
+	}
 
 	MPI_Finalize();
+
+	getchar();
 
 	return 0;
 }
