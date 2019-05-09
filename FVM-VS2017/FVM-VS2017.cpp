@@ -16,6 +16,8 @@
 #define n2 40       /* number of divisions in B direction*/
 #define n3 20       /* number of divisions in L direction*/
 
+#define NPROC 2
+
 #define Lu 60.0     /* upper boundary for L*/
 #define Ld 10.0     /* lower boundary for L*/
 #define Bu 70.0 	/* upper boundary for B*/
@@ -41,7 +43,6 @@ int main(int argc, char **argv) {
 	MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
 
 	long i, j, k, it;
-	const int NPROC = 4;
 	double deltaR, deltaL, deltaB, deltaL1, deltaB1;
 	double res_local, pom_local, pom_global, pom1_local, z, sigma, res3_local, res_global, res3_global;
 
@@ -57,19 +58,22 @@ int main(int argc, char **argv) {
 	deltaR = (Ru - Rd) / n1;
 	deltaL1 = deltaL * RAD * Rd;
 	deltaB1 = deltaB * RAD * Rd;
-	printf("%.2lf %.2lf %.2lf\n\n", deltaL1, deltaB1, deltaR);
+	// printf("%.2lf %.2lf %.2lf\n\n", deltaL1, deltaB1, deltaR);
 
 	// local/last packet sizes
-	int istart, iend, nlocal = 0, nlast = 0;
-	nlocal = (n1 / nprocs) + 1;
+	int istart, iend, nlocal, nlast;
+	nlocal = n1 / nprocs;
 	nlast = n1 - (nprocs - 1) * nlocal;
 
 	// packet indexing
 	istart = nlocal * myrank;
-	if (myrank == nprocs - 1)
-		iend = n1 - 1;
-	else
-		iend = istart + nlocal - 1;
+	if (myrank == nprocs - 1) {
+		iend = n1;
+	}
+	else {
+		iend = istart + nlocal;
+	}
+		
 
 	if (myrank == 0) {
 		printf("===============================================\n");
@@ -274,12 +278,12 @@ int main(int argc, char **argv) {
 	}
 
 	// process layer (coefficients au, ad) boundaries (upper and lower)
-	pole0 au_bd, ad_bd, u_bdU, u_bdD;
+	pole0 u_bdU, u_bdD;
 
 	for (j = 0; j <= n2 + 1; j++) {
 		for (k = 0; k <= n3 + 1; k++) {
-			au_bd[j][k] = au[nlocal + 1][j][k];
-			ad_bd[j][k] = ad[0][j][k];
+			u_bdU[j][k] = u[nlocal + 1][j][k];
+			u_bdD[j][k] = u[0][j][k];
 		}
 	}
 
@@ -287,21 +291,25 @@ int main(int argc, char **argv) {
 
 	// send boundary coeffs to neighboring processes
 	if (myrank > 0) {
-		MPI_Send(ad_bd, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 0, MPI_COMM_WORLD);
+		MPI_Send(u_bdD, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 0, MPI_COMM_WORLD);
 	}
 	if (myrank < nprocs - 1) {
-		MPI_Send(au_bd, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 2, MPI_COMM_WORLD);
+		MPI_Send(u_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 2, MPI_COMM_WORLD);
 	}
+
+	printf("p%d: buffers sent \n", myrank);
 
 	// recv buffers: recv_U receives D from the shell above and recv_D receives U from the shell below
-	pole0 recv_ad_bd, recv_au_bd;
+	pole0 recv_u_bdD, recv_u_bdU;
 
 	if (myrank < nprocs - 1) {
-		MPI_Recv(recv_au_bd, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 0, MPI_COMM_WORLD, &status);
+		MPI_Recv(recv_u_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 0, MPI_COMM_WORLD, &status);
 	}
 	if (myrank > 0) {
-		MPI_Recv(recv_ad_bd, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 2, MPI_COMM_WORLD, &status);
+		MPI_Recv(recv_u_bdD, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 2, MPI_COMM_WORLD, &status);
 	}
+
+	printf("p%d: buffers received \n", myrank);
 
 	/*----------------------------------------------------------------------------*/
 	/*riesenie sustavy rovnic*/
@@ -404,7 +412,7 @@ int main(int argc, char **argv) {
 		MPI_Allreduce(&res_local, &res_global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
 		res3_global = sqrt(res3_global / (n1 * n2 * n3));
-		printf("\t\t%d\t%.12lf\n", it, res_global);
+		if (myrank == 0) printf("p%d:\t%d\t%.12lf\n", myrank, it, res_global);
 
 	} while ((res_global > tol) && (it < max_it));
 
@@ -430,10 +438,9 @@ int main(int argc, char **argv) {
 
 	MPI_Allreduce(&pom_local, &pom_global, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-	sigma = sqrt(pom_global);
-	printf("sigma = %.20lf\n", sigma);
-
 	if (myrank == 0) {
+		sigma = sqrt(pom_global);
+		printf("sigma = %.20lf\n", sigma);
 		FILE *fw; // *fr,
 		fopen_s(&fw, "stat.txt", "w");
 
@@ -450,7 +457,7 @@ int main(int argc, char **argv) {
 
 	MPI_Finalize();
 
-	getchar();
+	// getchar();
 
 	return 0;
 }
