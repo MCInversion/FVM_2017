@@ -16,7 +16,7 @@
 #define n2 40       /* number of divisions in B direction*/
 #define n3 20       /* number of divisions in L direction*/
 
-#define NPROC 1
+#define NPROC 3
 
 #define Lu 60.0     /* upper boundary for L*/
 #define Ld 10.0     /* lower boundary for L*/
@@ -68,10 +68,10 @@ int main(int argc, char **argv) {
 	// packet indexing
 	istart = nlocal * myrank;
 	if (myrank == nprocs - 1) {
-		iend = n1;
+		iend = n1 - 1;
 	}
 	else {
-		iend = istart + nlocal;
+		iend = istart + nlocal - 1;
 	}
 		
 
@@ -80,13 +80,14 @@ int main(int argc, char **argv) {
 		printf("--------- MPI params --------------------------\n");
 		printf("nprocs = %d \n", nprocs);
 		printf("p%d: nlocal = %d, nlast = %d\n", myrank, nlocal, nlast);
+		printf("-----------------------------------------------\n");
 	}
 	printf("p%d: istart = %d, iend = %d\n\n", myrank, istart, iend);
 
 	/*----------------------------------------------------------------------------*/
 	/*vytvorenie 3D siete*/
 
-	for (i = 0; i <= nlocal + 1; i++) {
+	for (i = 1; i <= nlocal + 1; i++) {
 		for (j = 1; j <= n2 + 1; j++) {
 			for (k = 1; k <= n3 + 1; k++) {
 				L[i][j][k] = Ld + (k - 1) * deltaL;
@@ -138,18 +139,21 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	for (j = 1; j <= n2; j++) {
-		for (k = 1; k <= n3; k++) {
-			if (myrank == 0) {
+	if (myrank == 0) {
+		for (j = 1; j <= n2; j++) {
+			for (k = 1; k <= n3; k++) {
 				T_B[0][j][k] = T_B[1][j][k];
 				T_L[0][j][k] = T_L[1][j][k];
 				T_R[0][j][k] = T_R[1][j][k] - deltaR;
 			}
-
-			if (myrank == nprocs - 1) {
-				T_B[nlocal + 1][j][k] = T_B[nlocal][j][k];
-				T_L[nlocal + 1][j][k] = T_L[nlocal][j][k];
-				T_R[nlocal + 1][j][k] = T_R[nlocal][j][k] + deltaR;
+		}
+	}	
+	if (myrank == nprocs - 1) {
+		for (j = 1; j <= n2; j++) {
+			for (k = 1; k <= n3; k++) {
+				T_B[nlast + 1][j][k] = T_B[nlast][j][k];
+				T_L[nlast + 1][j][k] = T_L[nlast][j][k];
+				T_R[nlast + 1][j][k] = T_R[nlast][j][k] + deltaR;
 			}
 		}
 	}
@@ -236,11 +240,11 @@ int main(int argc, char **argv) {
 		for (j = 1; j <= n2; j++) {
 			for (k = 1; k <= n3; k++) {
 				//pom je presne riesenie v bode [n1+1][j][k]
-				pom_local = GM / T_R[nlocal + 1][j][k];
+				pom_local = GM / T_R[nlast + 1][j][k];
 				//kedze mame presne riesenie jedneho suseda, uz to nie je neznama a mozme ju prehodit na druhu stranu
-				b[nlocal][j][k] = b[nlocal][j][k] - pom_local * au[nlocal][j][k];
+				b[nlast][j][k] = b[nlast][j][k] - pom_local * au[nlast][j][k];
 				//kedze sme ju prehodili na pravu stranu, treba ju nulovat medzi neznamymi
-				au[nlocal][j][k] = 0;
+				au[nlast][j][k] = 0;
 			}
 		}
 	}
@@ -281,122 +285,99 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	// process layer (coefficients au, ad) boundaries (upper and lower)
-	pole0 u_bdU, u_bdD;
-
-	for (j = 0; j <= n2 + 1; j++) {
-		for (k = 0; k <= n3 + 1; k++) {
-			u_bdU[j][k] = u[nlocal + 1][j][k];
-			u_bdD[j][k] = u[0][j][k];
-		}
-	}
-
-	MPI_Status status;
-
-	// send boundary coeffs to neighboring processes
-	if (myrank > 0) {
-		MPI_Send(u_bdD, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 0, MPI_COMM_WORLD);
-	}
-	if (myrank < nprocs - 1) {
-		MPI_Send(u_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 2, MPI_COMM_WORLD);
-	}
-
-	printf("p%d: buffers sent \n", myrank);
-
-	// recv buffers: recv_U receives D from the shell above and recv_D receives U from the shell below
-	pole0 recv_u_bdD, recv_u_bdU;
-
-	if (myrank < nprocs - 1) {
-		MPI_Recv(recv_u_bdU, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 0, MPI_COMM_WORLD, &status);
-	}
-	if (myrank > 0) {
-		MPI_Recv(recv_u_bdD, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 2, MPI_COMM_WORLD, &status);
-	}
-
-	printf("p%d: buffers received \n", myrank);
 
 	/*----------------------------------------------------------------------------*/
 	/*riesenie sustavy rovnic*/
 
 	pom_local = 0.0;
 	it = 0;	
+	MPI_Status status;
 
-	if (myrank == 0) printf("p%d:    it:     res: \n", myrank);
+	if (myrank == 0) printf("p%d:    it:       res: \n", myrank);
 
 	do {
-		it = it + 1;
+		it++;
+		// even blocks ================================
+
+		// send boundary coeffs to neighboring processes
+		if (myrank > 0) {
+			MPI_Send(&u[1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 0, MPI_COMM_WORLD);
+		}
+		if (myrank < nprocs - 1) {
+			MPI_Send(&u[nlocal][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 1, MPI_COMM_WORLD);
+		}
+
+		// use Wait & iSend , iRecv
+
+		if (myrank < nprocs - 1) {
+			MPI_Recv(&u[nlocal + 1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 0, MPI_COMM_WORLD, &status);
+		}
+		if (myrank > 0) {
+			MPI_Recv(&u[0][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 1, MPI_COMM_WORLD, &status);
+		}
+
 		for (i = 1; i <= nlocal; i++) {
 			for (j = 1; j <= n2; j++) {
 				for (k = 1; k <= n3; k++) {
 					if ((istart + i + j + k) % 2 == 0) {
-
-						if (i == 1) {
-							z = (b[i][j][k] - u[i][j][k + 1] * ae[i][j][k]
-								- u[i][j][k - 1] * aw[i][j][k]
-								- u[i][j + 1][k] * an[i][j][k]
-								- u[i][j - 1][k] * as[i][j][k]
-								- u[i + 1][j][k] * au[i][j][k]
-								- u_bdD[j][k] * ad[i][j][k]) / ap[i][j][k];
-							u[i][j][k] = u[i][j][k] + omega * (z - u[i][j][k]);
-						}
-						else if (i == nlocal) {
-							z = (b[i][j][k] - u[i][j][k + 1] * ae[i][j][k]
-								- u[i][j][k - 1] * aw[i][j][k]
-								- u[i][j + 1][k] * an[i][j][k]
-								- u[i][j - 1][k] * as[i][j][k]
-								- u_bdU[j][k] * au[i][j][k]
-								- u[i - 1][j][k] * ad[i][j][k]) / ap[i][j][k];
-							u[i][j][k] = u[i][j][k] + omega * (z - u[i][j][k]);
-						}
-						else {
-							z = (b[i][j][k] - u[i][j][k + 1] * ae[i][j][k]
-								- u[i][j][k - 1] * aw[i][j][k]
-								- u[i][j + 1][k] * an[i][j][k]
-								- u[i][j - 1][k] * as[i][j][k]
-								- u[i + 1][j][k] * au[i][j][k]
-								- u[i - 1][j][k] * ad[i][j][k]) / ap[i][j][k];
-							u[i][j][k] = u[i][j][k] + omega * (z - u[i][j][k]);
-						}
+						z = (b[i][j][k] - u[i][j][k + 1] * ae[i][j][k]
+							- u[i][j][k - 1] * aw[i][j][k]
+							- u[i][j + 1][k] * an[i][j][k]
+							- u[i][j - 1][k] * as[i][j][k]
+							- u[i + 1][j][k] * au[i][j][k]
+							- u[i - 1][j][k] * ad[i][j][k]) / ap[i][j][k];
+						u[i][j][k] = u[i][j][k] + omega * (z - u[i][j][k]);
 					}
 				}
 			}
+		}
+
+		// odd blocks
+
+		// send boundary coeffs to neighboring processes
+		if (myrank > 0) {
+			MPI_Send(&u[1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 0, MPI_COMM_WORLD);
+		}
+		if (myrank < nprocs - 1) {
+			MPI_Send(&u[nlocal][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 1, MPI_COMM_WORLD);
+		}
+
+		if (myrank < nprocs - 1) {
+			MPI_Recv(&u[nlocal + 1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 0, MPI_COMM_WORLD, &status);
+		}
+		if (myrank > 0) {
+			MPI_Recv(&u[0][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 1, MPI_COMM_WORLD, &status);
 		}
 
 		for (i = 1; i <= nlocal; i++) {
 			for (j = 1; j <= n2; j++) {
 				for (k = 1; k <= n3; k++) {
 					if ((istart + i + j + k) % 2 == 1) {
-
-						if (i == 1) {
-							z = (b[i][j][k] - u[i][j][k + 1] * ae[i][j][k]
-								- u[i][j][k - 1] * aw[i][j][k]
-								- u[i][j + 1][k] * an[i][j][k]
-								- u[i][j - 1][k] * as[i][j][k]
-								- u[i + 1][j][k] * au[i][j][k]
-								- u_bdD[j][k] * ad[i][j][k]) / ap[i][j][k];
-							u[i][j][k] = u[i][j][k] + omega * (z - u[i][j][k]);
-						}
-						else if (i == nlocal) {
-							z = (b[i][j][k] - u[i][j][k + 1] * ae[i][j][k]
-								- u[i][j][k - 1] * aw[i][j][k]
-								- u[i][j + 1][k] * an[i][j][k]
-								- u[i][j - 1][k] * as[i][j][k]
-								- u_bdU[j][k] * au[i][j][k]
-								- u[i - 1][j][k] * ad[i][j][k]) / ap[i][j][k];
-							u[i][j][k] = u[i][j][k] + omega * (z - u[i][j][k]);
-						}
-						else {
-							z = (b[i][j][k] - u[i][j][k + 1] * ae[i][j][k]
-								- u[i][j][k - 1] * aw[i][j][k]
-								- u[i][j + 1][k] * an[i][j][k]
-								- u[i][j - 1][k] * as[i][j][k]
-								- u[i + 1][j][k] * au[i][j][k]
-								- u[i - 1][j][k] * ad[i][j][k]) / ap[i][j][k];
-							u[i][j][k] = u[i][j][k] + omega * (z - u[i][j][k]);
-						}
+						z = (b[i][j][k] - u[i][j][k + 1] * ae[i][j][k]
+							- u[i][j][k - 1] * aw[i][j][k]
+							- u[i][j + 1][k] * an[i][j][k]
+							- u[i][j - 1][k] * as[i][j][k]
+							- u[i + 1][j][k] * au[i][j][k]
+							- u[i - 1][j][k] * ad[i][j][k]) / ap[i][j][k];
+						u[i][j][k] = u[i][j][k] + omega * (z - u[i][j][k]);
 					}
 				}
 			}
+		}
+
+		// send boundary coeffs to neighboring processes
+		if (myrank > 0) {
+			MPI_Send(&u[1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 0, MPI_COMM_WORLD);
+		}
+		if (myrank < nprocs - 1) {
+			MPI_Send(&u[nlocal][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 1, MPI_COMM_WORLD);
+		}
+
+		if (myrank < nprocs - 1) {
+			MPI_Recv(&u[nlocal + 1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 0, MPI_COMM_WORLD, &status);
+		}
+		if (myrank > 0) {
+			MPI_Recv(&u[0][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 1, MPI_COMM_WORLD, &status);
 		}
 
 		res_local = res3_local = 0.0;
@@ -404,39 +385,18 @@ int main(int argc, char **argv) {
 		for (i = 1; i <= nlocal; i++) {
 			for (j = 1; j <= n2; j++) {
 				for (k = 1; k <= n3; k++) {
+					pom_local = (u[i][j][k] * ap[i][j][k]
+						+ u[i][j][k + 1] * ae[i][j][k]
+						+ u[i][j][k - 1] * aw[i][j][k]
+						+ u[i][j + 1][k] * an[i][j][k]
+						+ u[i][j - 1][k] * as[i][j][k]
+						+ u[i + 1][j][k] * au[i][j][k]
+						+ u[i - 1][j][k] * ad[i][j][k] - b[i][j][k]);
 
-					if (i == 1) {
-						pom_local = (u[i][j][k] * ap[i][j][k]
-							+ u[i][j][k + 1] * ae[i][j][k]
-							+ u[i][j][k - 1] * aw[i][j][k]
-							+ u[i][j + 1][k] * an[i][j][k]
-							+ u[i][j - 1][k] * as[i][j][k]
-							+ u[i + 1][j][k] * au[i][j][k]
-							+ u_bdD[j][k] * ad[i][j][k] - b[i][j][k]);
-					}
-					else if (i == nlocal) {
-						pom_local = (u[i][j][k] * ap[i][j][k]
-							+ u[i][j][k + 1] * ae[i][j][k]
-							+ u[i][j][k - 1] * aw[i][j][k]
-							+ u[i][j + 1][k] * an[i][j][k]
-							+ u[i][j - 1][k] * as[i][j][k]
-							+ u_bdU[j][k] * au[i][j][k]
-							+ u[i - 1][j][k] * ad[i][j][k] - b[i][j][k]);
-					}
-					else {
-						pom_local = (u[i][j][k] * ap[i][j][k]
-							+ u[i][j][k + 1] * ae[i][j][k]
-							+ u[i][j][k - 1] * aw[i][j][k]
-							+ u[i][j + 1][k] * an[i][j][k]
-							+ u[i][j - 1][k] * as[i][j][k]
-							+ u[i + 1][j][k] * au[i][j][k]
-							+ u[i - 1][j][k] * ad[i][j][k] - b[i][j][k]);
-					}
-
-					res_local = res_local + pom_local * pom_local;
+					res_local += pom_local * pom_local;
 
 					pom1_local = GM / T_R[i][j][k] - u[i][j][k];
-					res3_local = res3_local + pom1_local * pom1_local;
+					res3_local += pom1_local * pom1_local;
 				}
 			}
 		}
