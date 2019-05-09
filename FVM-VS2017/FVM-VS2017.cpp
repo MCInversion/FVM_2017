@@ -16,7 +16,7 @@
 #define n2 40       /* number of divisions in B direction*/
 #define n3 20       /* number of divisions in L direction*/
 
-#define NPROC 2
+#define NPROC 1
 
 #define Lu 60.0     /* upper boundary for L*/
 #define Ld 10.0     /* lower boundary for L*/
@@ -215,29 +215,33 @@ int main(int argc, char **argv) {
 	// presne riesenie je GM/R, derivacia v smere R je -GM/R^2
 	// na spodnej hranici je dana neumannova okrajova podmienka vsade inde dirichletova okrajova podmienka
 
-	for (j = 1; j <= n2; j++) {
-		for (k = 1; k <= n3; k++) {
-			//deltag je derivacia v radialnom smere (t.j. v smere normaly k D stene)
-			deltag[1][j][k] = GM / (R[1][j][k] * R[1][j][k]);
-			//kedze derivaciu v smere normaly k dolnej stene pozname, mozme ju prenasobit obsahom D steny a prehodit na pravu stranu
-			b[1][j][k] = b[1][j][k] - deltaL * RAD * (sin(B[1][j + 1][k] * RAD) - sin(B[1][j][k] * RAD)) * R[1][j][k] * R[1][j][k] * deltag[1][j][k];
-			//kedze sme ju prehodili na pravu stranu, treba ju nulovat medzi neznamymi
-			ad[1][j][k] = 0;
-			ap[1][j][k] = -(aw[1][j][k] + ae[1][j][k] + as[1][j][k] + an[1][j][k] + au[1][j][k]);
+	if (myrank == 0) {
+		for (j = 1; j <= n2; j++) {
+			for (k = 1; k <= n3; k++) {
+				//deltag je derivacia v radialnom smere (t.j. v smere normaly k D stene)
+				deltag[1][j][k] = GM / (R[1][j][k] * R[1][j][k]);
+				//kedze derivaciu v smere normaly k dolnej stene pozname, mozme ju prenasobit obsahom D steny a prehodit na pravu stranu
+				b[1][j][k] = b[1][j][k] - deltaL * RAD * (sin(B[1][j + 1][k] * RAD) - sin(B[1][j][k] * RAD)) * R[1][j][k] * R[1][j][k] * deltag[1][j][k];
+				//kedze sme ju prehodili na pravu stranu, treba ju nulovat medzi neznamymi
+				ad[1][j][k] = 0;
+				ap[1][j][k] = -(aw[1][j][k] + ae[1][j][k] + as[1][j][k] + an[1][j][k] + au[1][j][k]);
+			}
 		}
 	}
 
 	/*----------------------------------------------------------------------------*/
 	/*nacitanie okrajovych podmienok - Dirichlet*/
 
-	for (j = 1; j <= n2; j++) {
-		for (k = 1; k <= n3; k++) {
-			//pom je presne riesenie v bode [n1+1][j][k]
-			pom_local = GM / T_R[n1 + 1][j][k];
-			//kedze mame presne riesenie jedneho suseda, uz to nie je neznama a mozme ju prehodit na druhu stranu
-			b[n1][j][k] = b[n1][j][k] - pom_local * au[n1][j][k];
-			//kedze sme ju prehodili na pravu stranu, treba ju nulovat medzi neznamymi
-			au[n1][j][k] = 0;
+	if (myrank == nprocs - 1) {
+		for (j = 1; j <= n2; j++) {
+			for (k = 1; k <= n3; k++) {
+				//pom je presne riesenie v bode [n1+1][j][k]
+				pom_local = GM / T_R[nlocal + 1][j][k];
+				//kedze mame presne riesenie jedneho suseda, uz to nie je neznama a mozme ju prehodit na druhu stranu
+				b[nlocal][j][k] = b[nlocal][j][k] - pom_local * au[nlocal][j][k];
+				//kedze sme ju prehodili na pravu stranu, treba ju nulovat medzi neznamymi
+				au[nlocal][j][k] = 0;
+			}
 		}
 	}
 
@@ -317,6 +321,8 @@ int main(int argc, char **argv) {
 	pom_local = 0.0;
 	it = 0;	
 
+	if (myrank == 0) printf("p%d:    it:     res: \n", myrank);
+
 	do {
 		it = it + 1;
 		for (i = 1; i <= nlocal; i++) {
@@ -339,6 +345,15 @@ int main(int argc, char **argv) {
 								- u[i][j + 1][k] * an[i][j][k]
 								- u[i][j - 1][k] * as[i][j][k]
 								- u_bdU[j][k] * au[i][j][k]
+								- u[i - 1][j][k] * ad[i][j][k]) / ap[i][j][k];
+							u[i][j][k] = u[i][j][k] + omega * (z - u[i][j][k]);
+						}
+						else {
+							z = (b[i][j][k] - u[i][j][k + 1] * ae[i][j][k]
+								- u[i][j][k - 1] * aw[i][j][k]
+								- u[i][j + 1][k] * an[i][j][k]
+								- u[i][j - 1][k] * as[i][j][k]
+								- u[i + 1][j][k] * au[i][j][k]
 								- u[i - 1][j][k] * ad[i][j][k]) / ap[i][j][k];
 							u[i][j][k] = u[i][j][k] + omega * (z - u[i][j][k]);
 						}
@@ -370,6 +385,15 @@ int main(int argc, char **argv) {
 								- u[i - 1][j][k] * ad[i][j][k]) / ap[i][j][k];
 							u[i][j][k] = u[i][j][k] + omega * (z - u[i][j][k]);
 						}
+						else {
+							z = (b[i][j][k] - u[i][j][k + 1] * ae[i][j][k]
+								- u[i][j][k - 1] * aw[i][j][k]
+								- u[i][j + 1][k] * an[i][j][k]
+								- u[i][j - 1][k] * as[i][j][k]
+								- u[i + 1][j][k] * au[i][j][k]
+								- u[i - 1][j][k] * ad[i][j][k]) / ap[i][j][k];
+							u[i][j][k] = u[i][j][k] + omega * (z - u[i][j][k]);
+						}
 					}
 				}
 			}
@@ -397,6 +421,15 @@ int main(int argc, char **argv) {
 							+ u[i][j + 1][k] * an[i][j][k]
 							+ u[i][j - 1][k] * as[i][j][k]
 							+ u_bdU[j][k] * au[i][j][k]
+							+ u[i - 1][j][k] * ad[i][j][k] - b[i][j][k]);
+					}
+					else {
+						pom_local = (u[i][j][k] * ap[i][j][k]
+							+ u[i][j][k + 1] * ae[i][j][k]
+							+ u[i][j][k - 1] * aw[i][j][k]
+							+ u[i][j + 1][k] * an[i][j][k]
+							+ u[i][j - 1][k] * as[i][j][k]
+							+ u[i + 1][j][k] * au[i][j][k]
 							+ u[i - 1][j][k] * ad[i][j][k] - b[i][j][k]);
 					}
 
