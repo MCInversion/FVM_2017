@@ -1,15 +1,2 @@
 ﻿  FVM-VS2017.cpp
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(281): error C4700: uninitialized local variable 'recv_L_bdL' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(282): error C4700: uninitialized local variable 'recv_B_bdL' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(283): error C4700: uninitialized local variable 'recv_R_bdL' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(285): error C4700: uninitialized local variable 'recv_TL_bdL' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(286): error C4700: uninitialized local variable 'recv_TB_bdL' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(287): error C4700: uninitialized local variable 'recv_TR_bdL' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(290): error C4700: uninitialized local variable 'recv_L_bdU' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(291): error C4700: uninitialized local variable 'recv_B_bdU' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(292): error C4700: uninitialized local variable 'recv_R_bdU' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(294): error C4700: uninitialized local variable 'recv_TL_bdU' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(295): error C4700: uninitialized local variable 'recv_TB_bdU' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(296): error C4700: uninitialized local variable 'recv_TR_bdU' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(418): error C4700: uninitialized local variable 'recv_ad_bd' used
-c:\users\martin\source\repos\fvm_2017\fvm-vs2017\fvm-vs2017.cpp(421): error C4700: uninitialized local variable 'recv_au_bd' used
+  FVM-VS2017.vcxproj -> C:\Users\student\source\repos\FVM_2017\x64\Debug\FVM-VS2017.exe
