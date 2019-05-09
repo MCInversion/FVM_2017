@@ -42,7 +42,8 @@ int main(int argc, char **argv) {
 
 	long i, j, k, it;
 	const int NPROC = 4;
-	double deltaR, deltaL, deltaB, deltaL1, deltaB1, res, pom, pom1, z, sigma, res3;
+	double deltaR, deltaL, deltaB, deltaL1, deltaB1;
+	double res_local, pom_local, pom_global, pom1_local, z, sigma, res3_local, res_global, res3_global;
 
 	// typedef double pole1 [n1 / NPROC + 3][n2 + 2][n3 + 2];
 	// typedef double pole2 [n1 / NPROC + 3][n2 + 2][n3 + 2];
@@ -84,7 +85,6 @@ int main(int argc, char **argv) {
 	int istart, iend, nlocal = 0, nlast = 0;
 	nlocal = (n1 / nprocs) + 1;
 	nlast = n1 - (nprocs - 1) * nlocal;
-	int iGlobal;
 
 	// packet indexing
 	istart = nlocal * myrank;
@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
 	/*----------------------------------------------------------------------------*/
 	/*vytvorenie 3D siete*/
 
-	for (i = 1; i <= nlocal; i++) {
+	for (i = 0; i <= nlocal + 1; i++) {
 		L[i] = new double *[n2 + 2];
 		B[i] = new double *[n2 + 2];
 		R[i] = new double *[n2 + 2];
@@ -122,13 +122,13 @@ int main(int argc, char **argv) {
 
 	// process layer boundaries (upper and lower)
 	double **L_bdL = L[0];
-	double **L_bdU = L[nlocal];
+	double **L_bdU = L[nlocal + 1];
 
 	double **B_bdL = B[0];
-	double **B_bdU = B[nlocal];
+	double **B_bdU = B[nlocal + 1];
 
 	double **R_bdL = R[0];
-	double **R_bdU = R[nlocal];
+	double **R_bdU = R[nlocal + 1];
 
 	/*----------------------------------------------------------------------------*/
 	/*vypocet tazisk v BLR*/
@@ -178,33 +178,40 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	T_L[0] = new double *[n2 + 2];
-	T_B[0] = new double *[n2 + 2];
-	T_R[0] = new double *[n2 + 2];
+	if (myrank == 0) {
+		T_L[0] = new double *[n2 + 2];
+		T_B[0] = new double *[n2 + 2];
+		T_R[0] = new double *[n2 + 2];
+	}
 	for (j = 1; j <= n2; j++) {
-		T_L[0][j] = new double[n3 + 2];
-		T_B[0][j] = new double[n3 + 2];
-		T_R[0][j] = new double[n3 + 2];
+		if (myrank == 0) {
+			T_L[0][j] = new double[n3 + 2];
+			T_B[0][j] = new double[n3 + 2];
+			T_R[0][j] = new double[n3 + 2];
+		}
 		for (k = 1; k <= n3; k++) {
-			T_B[0][j][k] = T_B[1][j][k];
-			T_B[n1 + 1][j][k] = T_B[n1][j][k];
+			if (myrank == 0) {
+				T_B[0][j][k] = T_B[1][j][k];
+				T_L[0][j][k] = T_L[1][j][k];
+				T_R[0][j][k] = T_R[1][j][k] - deltaR;
+			}
 
-			T_L[0][j][k] = T_L[1][j][k];
-			T_L[n1 + 1][j][k] = T_L[n1][j][k];
-
-			T_R[0][j][k] = T_R[1][j][k] - deltaR;
-			T_R[n1 + 1][j][k] = T_R[n1][j][k] + deltaR;
+			if (myrank == nprocs - 1) {
+				T_B[nlocal + 1][j][k] = T_B[nlocal][j][k];
+				T_L[nlocal + 1][j][k] = T_L[nlocal][j][k];
+				T_R[nlocal + 1][j][k] = T_R[nlocal][j][k] + deltaR;
+			}
 		}
 	}
 
-	// process layer boundaries (upper and lower)
-	double **TL_bdU = T_L[nlocal];
+	// process layer (centers of mass) boundaries (upper and lower)
+	double **TL_bdU = T_L[nlocal + 1];
 	double **TL_bdL = T_L[0];
 
-	double **TB_bdU = T_B[nlocal];
+	double **TB_bdU = T_B[nlocal + 1];
 	double **TB_bdL = T_B[0];
 
-	double **TR_bdU = T_R[nlocal];
+	double **TR_bdU = T_R[nlocal + 1];
 	double **TR_bdL = T_R[0];
 
 	/*----------------------------------------------------------------------------*/
@@ -354,9 +361,9 @@ int main(int argc, char **argv) {
 	for (j = 1; j <= n2; j++) {
 		for (k = 1; k <= n3; k++) {
 			//pom je presne riesenie v bode [n1+1][j][k]
-			pom = GM / T_R[n1 + 1][j][k];
+			pom_local = GM / T_R[n1 + 1][j][k];
 			//kedze mame presne riesenie jedneho suseda, uz to nie je neznama a mozme ju prehodit na druhu stranu
-			b[n1][j][k] = b[n1][j][k] - pom * au[n1][j][k];
+			b[n1][j][k] = b[n1][j][k] - pom_local * au[n1][j][k];
 			//kedze sme ju prehodili na pravu stranu, treba ju nulovat medzi neznamymi
 			au[n1][j][k] = 0;
 		}
@@ -365,48 +372,72 @@ int main(int argc, char **argv) {
 	for (i = 1; i <= nlocal; i++) {
 		for (k = 1; k <= n3; k++) {
 			//pom je presne riesenie v bode [i][0][k]
-			pom = GM / T_R[i][0][k];
+			pom_local = GM / T_R[i][0][k];
 			//kedze mame presne riesenie jedneho suseda, uz to nie je neznama a mozme ju prehodit na druhu stranu
-			b[i][1][k] = b[i][1][k] - pom * as[i][1][k];
+			b[i][1][k] = b[i][1][k] - pom_local * as[i][1][k];
 			//kedze sme ju prehodili na pravu stranu, treba ju nulovat medzi neznamymi
 			as[i][1][k] = 0;
 
 			//pom je presne riesenie v bode [i][n2+1][k]
-			pom = GM / T_R[i][n2 + 1][k];
+			pom_local = GM / T_R[i][n2 + 1][k];
 			//kedze mame presne riesenie jedneho suseda, uz to nie je neznama a mozme ju prehodit na druhu stranu
-			b[i][n2][k] = b[i][n2][k] - pom * an[i][n2][k];
+			b[i][n2][k] = b[i][n2][k] - pom_local * an[i][n2][k];
 			//kedze sme ju prehodili na pravu stranu, treba ju nulovat medzi neznamymi
 			an[i][n2][k] = 0;
 		}
 	}
 
-	for (i = 1; i <= n1; i++) {
+	// process layer (coefficients au, ad) boundaries (upper and lower)
+	double **au_bd = au[nlocal];
+	double **ad_bd = ad[0];
+
+	for (i = 1; i <= nlocal; i++) {
 		for (j = 1; j <= n2; j++) {
 			//pom je presne riesenie v bode [i][j][0]
-			pom = GM / T_R[i][j][0];
+			pom_local = GM / T_R[i][j][0];
 			//kedze mame presne riesenie jedneho suseda, uz to nie je neznama a mozme ju prehodit na druhu stranu
-			b[i][j][1] = b[i][j][1] - pom * aw[i][j][1];
+			b[i][j][1] = b[i][j][1] - pom_local * aw[i][j][1];
 			//kedze sme ju prehodili na pravu stranu, treba ju nulovat medzi neznamymi
 			aw[i][j][1] = 0;
 
 			//pom je presne riesenie v bode [i][j][n3+1]
-			pom = GM / T_R[i][j][n3 + 1];
+			pom_local = GM / T_R[i][j][n3 + 1];
 			//kedze mame presne riesenie jedneho suseda, uz to nie je neznama a mozme ju prehodit na druhu stranu
-			b[i][j][n3] = b[i][j][n3] - pom * ae[i][j][n3];
+			b[i][j][n3] = b[i][j][n3] - pom_local * ae[i][j][n3];
 			//kedze sme ju prehodili na pravu stranu, treba ju nulovat medzi neznamymi
 			ae[i][j][n3] = 0;
 		}
 	}
 
+	// send boundary coeffs to neighboring processes
+	if (myrank > 0) {
+		MPI_Send(ad_bd, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 0, MPI_COMM_WORLD);
+	}
+	if (myrank < nprocs - 1) {
+		MPI_Send(au_bd, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 6, MPI_COMM_WORLD);
+	}
+
+	// recv buffers
+	double **recv_ad_bd;
+	double **recv_au_bd;
+
+	if (myrank < nprocs - 1) {
+		MPI_Recv(recv_ad_bd, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 0, MPI_COMM_WORLD, &status);
+	}
+	if (myrank > 0) {
+		MPI_Recv(recv_au_bd, (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 6, MPI_COMM_WORLD, &status);
+	}
+
+
 	/*----------------------------------------------------------------------------*/
 	/*riesenie sustavy rovnic*/
 
-	pom = 0.0;
-	it = 0;
+	pom_local = 0.0;
+	it = 0;	
 
 	do {
 		it = it + 1;
-		for (i = 1; i <= n1; i++) {
+		for (i = 1; i <= nlocal; i++) {
 			for (j = 1; j <= n2; j++) {
 				for (k = 1; k <= n3; k++) {
 					if ((i + j + k) % 2 == 0) {
@@ -422,7 +453,7 @@ int main(int argc, char **argv) {
 			}
 		}
 
-		for (i = 1; i <= n1; i++) {
+		for (i = 1; i <= nlocal; i++) {
 			for (j = 1; j <= n2; j++) {
 				for (k = 1; k <= n3; k++) {
 					if ((i + j + k) % 2 == 1) {
@@ -438,12 +469,12 @@ int main(int argc, char **argv) {
 			}
 		}
 
-		res = res3 = 0.0;
+		res_local = res3_local = 0.0;
 
-		for (i = 1; i <= n1; i++) {
+		for (i = 1; i <= nlocal; i++) {
 			for (j = 1; j <= n2; j++) {
 				for (k = 1; k <= n3; k++) {
-					pom = (u[i][j][k] * ap[i][j][k]
+					pom_local = (u[i][j][k] * ap[i][j][k]
 						+ u[i][j][k + 1] * ae[i][j][k]
 						+ u[i][j][k - 1] * aw[i][j][k]
 						+ u[i][j + 1][k] * an[i][j][k]
@@ -451,31 +482,35 @@ int main(int argc, char **argv) {
 						+ u[i + 1][j][k] * au[i][j][k]
 						+ u[i - 1][j][k] * ad[i][j][k] - b[i][j][k]);
 
-					res = res + pom * pom;
+					res_local = res_local + pom_local * pom_local;
 
-					pom1 = GM / T_R[i][j][k] - u[i][j][k];
-					res3 = res3 + pom1 * pom1;
+					pom1_local = GM / T_R[i][j][k] - u[i][j][k];
+					res3_local = res3_local + pom1_local * pom1_local;
 				}
 			}
 		}
-		res3 = sqrt(res3 / (n1 * n2 * n3));
-		printf("\t\t%d\t%.12lf\n", it, res);
 
-	} while ((res > tol) && (it < max_it));
+		MPI_Reduce(&res3_local, &res3_global, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+		MPI_Reduce(&res_local, &res_global, 1, MPI_DOUBLE, MPI_SUM, 1, MPI_COMM_WORLD);
+
+		res3_global = sqrt(res3_global / (n1 * n2 * n3));
+		printf("\t\t%d\t%.12lf\n", it, res_global);
+
+	} while ((res_global > tol) && (it < max_it));
 
 
 	/*----------------------------------------------------------------------------*/
 	/*porovnanie s presnym riesenim a zapis vysledkov*/
 
 	sigma = 0.0;
-	pom = 0.0;
+	pom_local = 0.0;
 
-	for (i = 1; i <= n1; i++) {
+	for (i = 1; i <= nlocal; i++) {
 		for (j = 1; j <= n2; j++) {
 			for (k = 1; k <= n3; k++) {
 				res2[i][j][k] = (GM / T_R[i][j][k]) - u[i][j][k];
-				pom +=
-					res2[i][j][k] * res2[i][j][k] * (deltaL*(pow(T_R[i][j][k] - deltaR / 2., 3.)
+				pom_local +=
+					res2[i][j][k] * res2[i][j][k] * (deltaL * (pow(T_R[i][j][k] - deltaR / 2., 3.)
 						- pow(T_R[i][j][k] + deltaR / 2., 3.)) * (sin(T_B[i][j][k] + deltaB / 2.)
 							- sin(T_B[i][j][k] - deltaB / 2.))) / 3.;
 				//	fprintf(fw,"%d %d %d\t%.7lf\t%.9lf\n",i,j,k,u[i][j][k],res2[i][j][k]);
@@ -483,8 +518,29 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	sigma = sqrt(pom);
+	MPI_Reduce(&pom_local, &pom_global, 1, MPI_DOUBLE, MPI_SUM, 2, MPI_COMM_WORLD);
+
+	sigma = sqrt(pom_global);
 	printf("sigma = %.20lf\n", sigma);
+
+	double ***u_global = new double**[n1 + 2];
+	double ***res2_global = new double**[n1 + 2];
+	double ***TR_global = new double**[n1 + 2];
+
+	for (i = 0; i <= n1; i++) {
+		u_global[i] = new double*[n2 + 2];
+		res2_global[i] = new double*[n2 + 2];
+		TR_global[i] = new double*[n2 + 2];
+		for (j = 0; j <= n2; j++) {
+			u_global[i][j] = new double[n3 + 2];
+			res2_global[i][j] = new double[n3 + 2];
+			TR_global[i][j] = new double[n3 + 2];
+		}
+	}
+
+	MPI_Allgather(u, nlocal * n2 * n3, MPI_DOUBLE, u_global + myrank * (n1 / NPROC + 3), nlocal * n2 * n3, MPI_DOUBLE, MPI_COMM_WORLD);
+	MPI_Allgather(res2, nlocal * n2 * n3, MPI_DOUBLE, res2_global + myrank * (n1 / NPROC + 3), nlocal * n2 * n3, MPI_DOUBLE, MPI_COMM_WORLD);
+	MPI_Allgather(T_R, nlocal * n2 * n3, MPI_DOUBLE, TR_global + myrank * (n1 / NPROC + 3), nlocal * n2 * n3, MPI_DOUBLE, MPI_COMM_WORLD);
 
 	if (myrank == 0) {
 		FILE *fw; // *fr,
@@ -493,29 +549,72 @@ int main(int argc, char **argv) {
 		i = 1;
 		for (j = 1; j <= n2; j++) {
 			for (k = 1; k <= n3; k++) {
-				res2[i][j][1] = (GM / T_R[i][j][k]) - u[i][j][k];
-				fprintf(fw, "%d %d %d\t%.7lf\t%.9lf\t%.7lf\n", i, j, k, u[i][j][j], res2[i][j][j], (GM / T_R[i][j][k]));
+				res2_global[i][j][1] = (GM / TR_global[i][j][k]) - u_global[i][j][k];
+				fprintf(fw, "%d %d %d\t%.7lf\t%.9lf\t%.7lf\n", i, j, k, u_global[i][j][j], res2_global[i][j][j], (GM / TR_global[i][j][k]));
 			}
 		}
 
 		i = n1 / 2;
 		for (j = 1; j <= n2; j++) {
 			for (k = 1; k <= n3; k++) {
-				res2[i][j][1] = (GM / T_R[i][j][k]) - u[i][j][k];
-				fprintf(fw, "%d %d %d\t%.7lf\t%.9lf\t%.7lf\n", i, j, k, u[i][j][j], res2[i][j][j], (GM / T_R[i][j][k]));
+				res2_global[i][j][1] = (GM / TR_global[i][j][k]) - u_global[i][j][k];
+				fprintf(fw, "%d %d %d\t%.7lf\t%.9lf\t%.7lf\n", i, j, k, u_global[i][j][j], res2_global[i][j][j], (GM / TR_global[i][j][k]));
 			}
 		}
 
 		i = n1;
 		for (j = 1; j <= n2; j++) {
 			for (k = 1; k <= n3; k++) {
-				res2[i][j][1] = (GM / T_R[i][j][k]) - u[i][j][k];
-				fprintf(fw, "%d %d %d\t%.7lf\t%.9lf\t%.7lf\n", i, j, k, u[i][j][j], res2[i][j][j], (GM / T_R[i][j][k]));
+				res2_global[i][j][1] = (GM / TR_global[i][j][k]) - u_global[i][j][k];
+				fprintf(fw, "%d %d %d\t%.7lf\t%.9lf\t%.7lf\n", i, j, k, u[i][j][j], res2_global[i][j][j], (GM / TR_global[i][j][k]));
 			}
 		}
 
 		fclose(fw);
 	}
+
+	/*
+	double **au_bd = au[nlocal];
+	double **ad_bd = ad[0];
+	*/
+
+	for (i = 0; i <= nlocal; i++) {
+		for (j = 0; j <= n2; j++) {
+			delete[] B[i][j]; delete[] L[i][j]; delete[] R[i][j];
+			delete[] T_B[i][j]; delete[] T_L[i][j]; delete[] T_R[i][j];
+			delete[] s[i][j]; delete[] u[i][j]; delete[] deltag[i][j]; delete[] b[i][j]; delete[] res2[i][j];
+			delete[] an[i][j]; delete[] as[i][j]; delete[] aw[i][j]; delete[] an[i][j];
+			delete[] au[i][j]; delete[] ad[i][j]; delete[] ap[i][j];
+			if (i == 0) {
+				delete[] recv_L_bdL[j]; delete L_bdL[j]; delete[] recv_L_bdU[j]; delete L_bdU[j];
+				delete[] recv_B_bdL[j]; delete B_bdL[j]; delete[] recv_B_bdU[j]; delete B_bdU[j];
+				delete[] recv_R_bdL[j]; delete R_bdL[j]; delete[] recv_R_bdU[j]; delete R_bdU[j];
+				delete[] recv_TL_bdL[j]; delete TL_bdL[j]; delete[] recv_TL_bdU[j]; delete TL_bdU[j];
+				delete[] recv_TB_bdL[j]; delete TB_bdL[j]; delete[] recv_TB_bdU[j]; delete TB_bdU[j];
+				delete[] recv_TR_bdL[j]; delete TR_bdL[j]; delete[] recv_TR_bdU[j]; delete TR_bdU[j];
+				delete[] recv_ad_bd[j]; delete ad_bd[j]; delete recv_au_bd[j]; delete au_bd[j];
+			}
+		}
+		delete[] B[i]; delete[] L[i]; delete[] R[i];
+		delete[] T_B[i]; delete[] T_L[i]; delete[] T_R[i];
+		delete[] s[i]; delete[] u[i]; delete[] deltag[i]; delete[] b[i]; delete[] res2[i];
+		delete[] an[i]; delete[] as[i]; delete[] aw[i]; delete[] an[i];
+		delete[] au[i]; delete[] ad[i]; delete[] ap[i];
+	}
+	delete[] B; delete[] L; delete[] R;
+	delete[] T_B; delete[] T_L; delete[] T_R;
+	delete[] s; delete[] u; delete[] deltag; delete[] b; delete[] res2;
+	delete[] an; delete[] as; delete[] aw; delete[] an;
+	delete[] au; delete[] ad; delete[] ap;
+
+	delete[] recv_L_bdL; delete L_bdL; delete[] recv_L_bdU; delete L_bdU;
+	delete[] recv_B_bdL; delete B_bdL; delete[] recv_B_bdU; delete B_bdU;
+	delete[] recv_R_bdL; delete R_bdL; delete[] recv_R_bdU; delete R_bdU;
+	delete[] recv_TL_bdL; delete TL_bdL; delete[] recv_TL_bdU; delete TL_bdU;
+	delete[] recv_TB_bdL; delete TB_bdL; delete[] recv_TB_bdU; delete TB_bdU;
+	delete[] recv_TR_bdL; delete TR_bdL; delete[] recv_TR_bdU; delete TR_bdU;
+	delete[] recv_ad_bd; delete ad_bd; delete recv_au_bd; delete au_bd;
+
 
 	MPI_Finalize();
 
