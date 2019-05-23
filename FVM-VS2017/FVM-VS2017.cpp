@@ -292,6 +292,9 @@ int main(int argc, char **argv) {
 	pom_local = 0.0;
 	it = 0;	
 	MPI_Status status;
+	// int nreq = 2 * (nprocs - 1);
+	// MPI_Status* statuses = new MPI_Status [nreq];
+	// MPI_Request* requests = new MPI_Request [nreq];
 
 	if (myrank == 0) printf("p%d:    it:       res: \n", myrank);
 
@@ -307,14 +310,27 @@ int main(int argc, char **argv) {
 			MPI_Send(&u[nlocal][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 1, MPI_COMM_WORLD);
 		}
 
-		// use Wait & iSend , iRecv
-
 		if (myrank < nprocs - 1) {
 			MPI_Recv(&u[nlocal + 1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 0, MPI_COMM_WORLD, &status);
 		}
 		if (myrank > 0) {
 			MPI_Recv(&u[0][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 1, MPI_COMM_WORLD, &status);
 		}
+		/*
+		if (myrank > 0) {
+			MPI_Isend(&u[1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 0, MPI_COMM_WORLD, &requests[myrank - 1]);
+		}
+		if (myrank < nprocs - 1) {
+			MPI_Isend(&u[nlocal][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 1, MPI_COMM_WORLD, &requests[nprocs + myrank]);
+		}
+
+		if (myrank < nprocs - 1) {
+			MPI_Irecv(&u[nlocal + 1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 0, MPI_COMM_WORLD, &requests[myrank + 1]);
+		}
+		if (myrank > 0) {
+			MPI_Irecv(&u[0][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 1, MPI_COMM_WORLD, &requests[nprocs + myrank - 2]);
+		}
+		MPI_Waitall(nreq, requests, statuses);*/
 
 		for (i = 1; i <= nlocal; i++) {
 			for (j = 1; j <= n2; j++) {
@@ -348,6 +364,21 @@ int main(int argc, char **argv) {
 		if (myrank > 0) {
 			MPI_Recv(&u[0][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 1, MPI_COMM_WORLD, &status);
 		}
+		/*
+		if (myrank > 0) {
+			MPI_Isend(&u[1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 0, MPI_COMM_WORLD, &requests[myrank - 1]);
+		}
+		if (myrank < nprocs - 1) {
+			MPI_Isend(&u[nlocal][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 1, MPI_COMM_WORLD, &requests[nprocs + myrank]);
+		}
+
+		if (myrank < nprocs - 1) {
+			MPI_Irecv(&u[nlocal + 1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 0, MPI_COMM_WORLD, &requests[myrank + 1]);
+		}
+		if (myrank > 0) {
+			MPI_Irecv(&u[0][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 1, MPI_COMM_WORLD, &requests[nprocs + myrank - 2]);
+		}
+		MPI_Waitall(nreq, requests, statuses);*/
 
 		for (i = 1; i <= nlocal; i++) {
 			for (j = 1; j <= n2; j++) {
@@ -379,6 +410,21 @@ int main(int argc, char **argv) {
 		if (myrank > 0) {
 			MPI_Recv(&u[0][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 1, MPI_COMM_WORLD, &status);
 		}
+		/*
+		if (myrank > 0) {
+			MPI_Isend(&u[1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 0, MPI_COMM_WORLD, &requests[myrank - 1]);
+		}
+		if (myrank < nprocs - 1) {
+			MPI_Isend(&u[nlocal][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 1, MPI_COMM_WORLD, &requests[nprocs + myrank]);
+		}
+
+		if (myrank < nprocs - 1) {
+			MPI_Irecv(&u[nlocal + 1][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank + 1, 0, MPI_COMM_WORLD, &requests[myrank + 1]);
+		}
+		if (myrank > 0) {
+			MPI_Irecv(&u[0][0][0], (n2 + 2) * (n3 + 2), MPI_DOUBLE, myrank - 1, 1, MPI_COMM_WORLD, &requests[nprocs + myrank - 2]);
+		}
+		MPI_Waitall(nreq, requests, statuses);*/
 
 		res_local = res3_local = 0.0;
 
